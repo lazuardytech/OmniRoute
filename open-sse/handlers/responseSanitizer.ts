@@ -40,23 +40,6 @@ function toNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function hasVisibleMessageContent(content: unknown): boolean {
-  if (typeof content === "string") {
-    return content.trim().length > 0;
-  }
-
-  if (!Array.isArray(content)) return false;
-
-  return content.some((contentPart) => {
-    const part = toRecord(contentPart);
-    if (!part) return false;
-    if (typeof part.text === "string" && part.text.trim().length > 0) return true;
-    if (typeof part.content === "string" && part.content.trim().length > 0) return true;
-    const partType = toString(part.type);
-    return Boolean(partType && partType !== "thinking" && partType !== "reasoning");
-  });
-}
-
 // Matches <think>...</think> blocks and <thinking>...</thinking> (greedy, dotAll)
 const THINK_TAG_REGEX = /<(?:think|thinking)>([\s\S]*?)<\/(?:think|thinking)>/gi;
 
@@ -282,12 +265,8 @@ function sanitizeMessage(msg: unknown): unknown {
     }
   }
 
-  // Non-streaming responses should not expose both visible content and reasoning_content.
-  // Some clients drop the visible assistant text or render duplicated panels when both fields
-  // are present in the final payload. Keep reasoning_content only for reasoning-only messages.
-  if (sanitized.reasoning_content !== undefined && hasVisibleMessageContent(sanitized.content)) {
-    delete sanitized.reasoning_content;
-  }
+  // Preserve reasoning_content even when visible content exists.
+  // Downstream clients that render a dedicated thinking panel rely on this field.
 
   // Preserve tool_calls
   if (msgRecord.tool_calls) {
@@ -694,6 +673,14 @@ export function sanitizeStreamingChunk(parsed: unknown): unknown {
           }
           if (deltaRecord.reasoning_text !== undefined) {
             delta.reasoning_text = deltaRecord.reasoning_text;
+          } else if (
+            deltaRecord.reasoning &&
+            typeof deltaRecord.reasoning === "object" &&
+            typeof (deltaRecord.reasoning as JsonRecord).summary === "string"
+          ) {
+            // OpenAI Responses summary shape: { reasoning: { summary: "..." } }
+            // Preserve it in a scalar field so OpenAI-style clients can render it.
+            delta.reasoning_text = (deltaRecord.reasoning as JsonRecord).summary;
           } else if (typeof deltaRecord.reasoning === "string" && deltaRecord.reasoning) {
             // Alias: some providers use 'reasoning' instead of 'reasoning_content'
             delta.reasoning_content = deltaRecord.reasoning;

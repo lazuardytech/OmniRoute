@@ -829,7 +829,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     if (!reasoningDelta) return null;
     const reasoningDeltaShape = state.copilotCompatibleReasoning
       ? { reasoning_text: reasoningDelta }
-      : { reasoning: { summary: reasoningDelta } };
+      : { reasoning_content: reasoningDelta };
     return {
       id: state.chatId,
       object: "chat.completion.chunk",
